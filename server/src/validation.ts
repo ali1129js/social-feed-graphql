@@ -8,6 +8,13 @@ export const MAX_FEED_FIRST = 50;
 
 export const idSchema = z.string().trim().min(1, "Id is required");
 
+export const handleSchema = z
+  .string()
+  .trim()
+  .min(1, "Handle is required")
+  .max(32, "Handle must be at most 32 characters");
+
+
 export const postBodySchema = z
   .string()
   .trim()
