@@ -13,8 +13,37 @@ export interface UIStrings {
   animatedBackground: string;
   animatedBackgroundReduced: string;
   feedHeading: string;
-  feedPlaceholder: string;
   fictionalNote: string;
+  signInHeading: string;
+  signInHelp: string;
+  signInAction: string;
+  signInAs: string;
+  signingIn: string;
+  signOut: string;
+  signedInAs: string;
+  pickUser: string;
+  composerHeading: string;
+  composerPlaceholder: string;
+  composerPublish: string;
+  composerPublishing: string;
+  remainingChars: (n: number) => string;
+  like: string;
+  liked: string;
+  likes: (n: number) => string;
+  commentHeading: string;
+  commentPlaceholder: string;
+  commentAction: string;
+  commentPosting: string;
+  noComments: string;
+  deletePost: string;
+  deleteComment: string;
+  deleting: string;
+  loadingFeed: string;
+  feedError: string;
+  retry: string;
+  emptyFeed: string;
+  signInToPost: string;
+  signInToReact: string;
 }
 
 const en: UIStrings = {
@@ -30,8 +59,37 @@ const en: UIStrings = {
   animatedBackground: "Animated background",
   animatedBackgroundReduced: "Animated background (off, your system asks for reduced motion)",
   feedHeading: "Feed",
-  feedPlaceholder: "The feed arrives with the next steps: schema, auth, then the client list.",
   fictionalNote: "All people and posts are fictional example data.",
+  signInHeading: "Sign in",
+  signInHelp: "Pick a seeded demo user. There is no password.",
+  signInAction: "Sign in",
+  signInAs: "Sign in as",
+  signingIn: "Signing in…",
+  signOut: "Sign out",
+  signedInAs: "Signed in as",
+  pickUser: "Choose a user",
+  composerHeading: "New post",
+  composerPlaceholder: "Write a post",
+  composerPublish: "Publish",
+  composerPublishing: "Publishing…",
+  remainingChars: (n) => (n === 1 ? "1 character left" : `${n} characters left`),
+  like: "Like",
+  liked: "Liked",
+  likes: (n) => (n === 1 ? "1 like" : `${n} likes`),
+  commentHeading: "Comments",
+  commentPlaceholder: "Write a comment",
+  commentAction: "Comment",
+  commentPosting: "Posting…",
+  noComments: "No comments yet.",
+  deletePost: "Delete post",
+  deleteComment: "Delete comment",
+  deleting: "Deleting…",
+  loadingFeed: "Loading the feed…",
+  feedError: "The feed could not be loaded.",
+  retry: "Try again",
+  emptyFeed: "No posts yet.",
+  signInToPost: "Sign in to write a post.",
+  signInToReact: "Sign in to like or comment.",
 };
 
 const de: UIStrings = {
@@ -47,8 +105,37 @@ const de: UIStrings = {
   animatedBackground: "Animierter Hintergrund",
   animatedBackgroundReduced: "Animierter Hintergrund (aus, dein System wünscht weniger Bewegung)",
   feedHeading: "Feed",
-  feedPlaceholder: "Der Feed folgt mit den nächsten Schritten: Schema, Anmeldung, dann die Liste.",
   fictionalNote: "Alle Personen und Beiträge sind erfundene Beispieldaten.",
+  signInHeading: "Anmelden",
+  signInHelp: "Wähle eine vorgegebene Demo-Person. Es gibt kein Passwort.",
+  signInAction: "Anmelden",
+  signInAs: "Anmelden als",
+  signingIn: "Anmeldung…",
+  signOut: "Abmelden",
+  signedInAs: "Angemeldet als",
+  pickUser: "Person wählen",
+  composerHeading: "Neuer Beitrag",
+  composerPlaceholder: "Schreib einen Beitrag",
+  composerPublish: "Veröffentlichen",
+  composerPublishing: "Wird veröffentlicht…",
+  remainingChars: (n) => (n === 1 ? "1 Zeichen übrig" : `${n} Zeichen übrig`),
+  like: "Gefällt mir",
+  liked: "Gefällt dir",
+  likes: (n) => (n === 1 ? "1 Like" : `${n} Likes`),
+  commentHeading: "Kommentare",
+  commentPlaceholder: "Schreib einen Kommentar",
+  commentAction: "Kommentieren",
+  commentPosting: "Wird gesendet…",
+  noComments: "Noch keine Kommentare.",
+  deletePost: "Beitrag löschen",
+  deleteComment: "Kommentar löschen",
+  deleting: "Wird gelöscht…",
+  loadingFeed: "Feed wird geladen…",
+  feedError: "Der Feed konnte nicht geladen werden.",
+  retry: "Nochmal versuchen",
+  emptyFeed: "Noch keine Beiträge.",
+  signInToPost: "Melde dich an, um einen Beitrag zu schreiben.",
+  signInToReact: "Melde dich an, um zu liken oder zu kommentieren.",
 };
 
 export const STRINGS: Readonly<Record<LocaleName, UIStrings>> = { en, de };

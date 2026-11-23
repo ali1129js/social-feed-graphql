@@ -1,5 +1,9 @@
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
+import { Provider } from "urql";
+import { FeedPage } from "./feed/FeedPage";
 import { useStoredState } from "./hooks/useStoredState";
+import { readToken, writeToken } from "./lib/auth";
+import { createUrqlClient } from "./lib/client";
 import { STRINGS } from "./lib/i18n";
 import {
   KEYS,
@@ -29,6 +33,8 @@ export function App() {
     defaultLocale(),
   );
   const [reduced] = useState(() => prefersReducedMotion());
+  const [token, setToken] = useState<string | undefined>(() => readToken());
+  const client = useMemo(() => createUrqlClient({ getToken: () => token }), [token]);
   const t = STRINGS[locale];
 
   useEffect(() => applyTheme(theme), [theme]);
@@ -38,27 +44,32 @@ export function App() {
     document.title = t.documentTitle;
   }, [locale, t.documentTitle]);
 
+  function onAuthChange(next: string | undefined) {
+    writeToken(next);
+    setToken(next);
+  }
+
   return (
-    <div className="app">
-      <a className="skip-link" href="#main">
-        {t.skipToContent}
-      </a>
-      <header className="app-header">
-        <div>
-          <h1 className="app-title">{t.title}</h1>
-          <p className="app-sub">{t.subtitle}</p>
-        </div>
-        <div className="theme-tools">
-          <ThemeSwitcher value={theme} onChange={setTheme} strings={t} />
-          <MotionToggle value={motion} onChange={setMotion} reducedMotion={reduced} strings={t} />
-          <LocaleToggle value={locale} onChange={setLocale} strings={t} />
-        </div>
-      </header>
-      <main id="main" className="app-main" tabIndex={-1}>
-        <h2>{t.feedHeading}</h2>
-        <p>{t.feedPlaceholder}</p>
-        <p className="app-sub">{t.fictionalNote}</p>
-      </main>
-    </div>
+    <Provider value={client}>
+      <div className="app">
+        <a className="skip-link" href="#main">
+          {t.skipToContent}
+        </a>
+        <header className="app-header">
+          <div>
+            <h1 className="app-title">{t.title}</h1>
+            <p className="app-sub">{t.subtitle}</p>
+          </div>
+          <div className="theme-tools">
+            <ThemeSwitcher value={theme} onChange={setTheme} strings={t} />
+            <MotionToggle value={motion} onChange={setMotion} reducedMotion={reduced} strings={t} />
+            <LocaleToggle value={locale} onChange={setLocale} strings={t} />
+          </div>
+        </header>
+        <main id="main" className="app-main" tabIndex={-1}>
+          <FeedPage locale={locale} strings={t} token={token} onAuthChange={onAuthChange} />
+        </main>
+      </div>
+    </Provider>
   );
 }

@@ -2,7 +2,7 @@
 
 A small social feed built as a monorepo: a TypeScript GraphQL server and a React client. All people and posts are fictional example data.
 
-Status: the GraphQL schema, in-memory store and demo sign-in (pick a seeded user, signed JWT, no passwords) are in place. The client feed, persistence and deployment come in the next steps.
+Status: you can sign in as a seeded demo user and use the client feed (composer, likes and comments) against the local GraphQL API. Persistence and deployment come in the next steps.
 
 ## Layout
 
