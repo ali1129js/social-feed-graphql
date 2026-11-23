@@ -44,6 +44,9 @@ export interface UIStrings {
   emptyFeed: string;
   signInToPost: string;
   signInToReact: string;
+  loadMore: string;
+  loadingMore: string;
+  loadMoreError: string;
 }
 
 const en: UIStrings = {
@@ -90,6 +93,9 @@ const en: UIStrings = {
   emptyFeed: "No posts yet.",
   signInToPost: "Sign in to write a post.",
   signInToReact: "Sign in to like or comment.",
+  loadMore: "Load more",
+  loadingMore: "Loading more…",
+  loadMoreError: "The next page could not be loaded.",
 };
 
 const de: UIStrings = {
@@ -136,6 +142,9 @@ const de: UIStrings = {
   emptyFeed: "Noch keine Beiträge.",
   signInToPost: "Melde dich an, um einen Beitrag zu schreiben.",
   signInToReact: "Melde dich an, um zu liken oder zu kommentieren.",
+  loadMore: "Mehr laden",
+  loadingMore: "Weitere Beiträge werden geladen…",
+  loadMoreError: "Die nächste Seite konnte nicht geladen werden.",
 };
 
 export const STRINGS: Readonly<Record<LocaleName, UIStrings>> = { en, de };

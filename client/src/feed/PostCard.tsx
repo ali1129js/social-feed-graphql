@@ -17,17 +17,20 @@ interface Props {
   me: GqlUser | null;
   locale: LocaleName;
   strings: UIStrings;
-  onChanged: () => void;
+  onUpdated: (post: GqlPost) => void;
+  onDeleted: (postId: string) => void;
 }
 
-export function PostCard({ post, me, locale, strings, onChanged }: Props) {
+export function PostCard({ post, me, locale, strings, onUpdated, onDeleted }: Props) {
   const [commentBody, setCommentBody] = useState("");
   const [error, setError] = useState<string | undefined>();
+  const [optimistic, setOptimistic] = useState<GqlPost | undefined>(undefined);
+  const view = optimistic ?? post;
   const [likeResult, like] = useMutation(LIKE_MUTATION);
   const [commentResult, comment] = useMutation(COMMENT_MUTATION);
   const [deletePostResult, deletePost] = useMutation(DELETE_POST_MUTATION);
   const [deleteCommentResult, deleteComment] = useMutation(DELETE_COMMENT_MUTATION);
-  const isAuthor = me?.id === post.author.id;
+  const isAuthor = me?.id === view.author.id;
   const canReact = me !== null;
   const commentEmpty = commentBody.trim().length === 0;
   const commentTooLong = commentBody.trim().length > MAX_COMMENT_BODY;
@@ -35,47 +38,88 @@ export function PostCard({ post, me, locale, strings, onChanged }: Props) {
   async function onLike() {
     if (!canReact || likeResult.fetching) return;
     setError(undefined);
-    const result = await like({ postId: post.id });
-    if (result.error) {
-      setError(result.error.graphQLErrors[0]?.message ?? result.error.message);
+    const snapshot = view;
+    const nextLiked = !snapshot.likedByMe;
+    setOptimistic({
+      ...snapshot,
+      likedByMe: nextLiked,
+      likeCount: snapshot.likeCount + (nextLiked ? 1 : -1),
+    });
+    const result = await like({ postId: snapshot.id });
+    if (result.error || !result.data) {
+      setOptimistic(undefined);
+      setError(result.error?.graphQLErrors[0]?.message ?? result.error?.message ?? "Like failed");
       return;
     }
-    onChanged();
+    setOptimistic(undefined);
+    onUpdated(result.data.like);
   }
 
   async function onComment(event: FormEvent) {
     event.preventDefault();
-    if (!canReact || commentEmpty || commentTooLong) return;
+    if (!canReact || !me || commentEmpty || commentTooLong) return;
     setError(undefined);
-    const result = await comment({ postId: post.id, body: commentBody.trim() });
-    if (result.error) {
-      setError(result.error.graphQLErrors[0]?.message ?? result.error.message);
+    const body = commentBody.trim();
+    const snapshot = view;
+    const pending = {
+      id: "pending-comment",
+      postId: snapshot.id,
+      body,
+      createdAt: new Date().toISOString(),
+      author: me,
+    };
+    setOptimistic({
+      ...snapshot,
+      comments: [...snapshot.comments, pending],
+      commentCount: snapshot.commentCount + 1,
+    });
+    const result = await comment({ postId: snapshot.id, body });
+    if (result.error || !result.data) {
+      setOptimistic(undefined);
+      setError(result.error?.graphQLErrors[0]?.message ?? result.error?.message ?? "Comment failed");
       return;
     }
+    setOptimistic(undefined);
     setCommentBody("");
-    onChanged();
+    onUpdated({
+      ...snapshot,
+      comments: [...snapshot.comments, result.data.comment],
+      commentCount: snapshot.commentCount + 1,
+    });
   }
 
   async function onDeletePost() {
     if (!isAuthor || deletePostResult.fetching) return;
     setError(undefined);
-    const result = await deletePost({ postId: post.id });
+    const result = await deletePost({ postId: view.id });
     if (result.error) {
       setError(result.error.graphQLErrors[0]?.message ?? result.error.message);
       return;
     }
-    onChanged();
+    onDeleted(view.id);
   }
 
   async function onDeleteComment(commentId: string) {
     if (deleteCommentResult.fetching) return;
     setError(undefined);
+    const snapshot = view;
+    setOptimistic({
+      ...snapshot,
+      comments: snapshot.comments.filter((item) => item.id !== commentId),
+      commentCount: Math.max(0, snapshot.commentCount - 1),
+    });
     const result = await deleteComment({ commentId });
     if (result.error) {
+      setOptimistic(undefined);
       setError(result.error.graphQLErrors[0]?.message ?? result.error.message);
       return;
     }
-    onChanged();
+    setOptimistic(undefined);
+    onUpdated({
+      ...snapshot,
+      comments: snapshot.comments.filter((item) => item.id !== commentId),
+      commentCount: Math.max(0, snapshot.commentCount - 1),
+    });
   }
 
   return (
@@ -83,11 +127,11 @@ export function PostCard({ post, me, locale, strings, onChanged }: Props) {
       <header className="post-header">
         <div>
           <p className="post-author">
-            <strong>{post.author.displayName}</strong>{" "}
-            <span className="app-sub">@{post.author.handle}</span>
+            <strong>{view.author.displayName}</strong>{" "}
+            <span className="app-sub">@{view.author.handle}</span>
           </p>
-          <time className="app-sub" dateTime={post.createdAt}>
-            {formatPostTime(post.createdAt, locale)}
+          <time className="app-sub" dateTime={view.createdAt}>
+            {formatPostTime(view.createdAt, locale)}
           </time>
         </div>
         {isAuthor ? (
@@ -101,26 +145,26 @@ export function PostCard({ post, me, locale, strings, onChanged }: Props) {
           </button>
         ) : null}
       </header>
-      <p className="post-body">{post.body}</p>
+      <p className="post-body">{view.body}</p>
       <div className="post-actions">
         <button
           type="button"
           className="button-secondary"
-          aria-pressed={post.likedByMe}
-          aria-label={post.likedByMe ? strings.liked : strings.like}
+          aria-pressed={view.likedByMe}
+          aria-label={view.likedByMe ? strings.liked : strings.like}
           onClick={() => void onLike()}
           disabled={!canReact || likeResult.fetching}
         >
-          {post.likedByMe ? strings.liked : strings.like}
-          <span aria-hidden="true"> · {post.likeCount}</span>
+          {view.likedByMe ? strings.liked : strings.like}
+          <span aria-hidden="true"> · {view.likeCount}</span>
         </button>
-        <span className="app-sub">{strings.likes(post.likeCount)}</span>
+        <span className="app-sub">{strings.likes(view.likeCount)}</span>
       </div>
       <section className="comments" aria-label={strings.commentHeading}>
         <h3>{strings.commentHeading}</h3>
-        {post.comments.length === 0 ? <p className="app-sub">{strings.noComments}</p> : null}
+        {view.comments.length === 0 ? <p className="app-sub">{strings.noComments}</p> : null}
         <ul className="comment-list">
-          {post.comments.map((item) => (
+          {view.comments.map((item) => (
             <li key={item.id} className="comment-item">
               <p>
                 <strong>{item.author.displayName}</strong>{" "}

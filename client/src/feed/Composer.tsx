@@ -1,12 +1,13 @@
 import { useState, type FormEvent } from "react";
 import { useMutation } from "urql";
 import { CREATE_POST_MUTATION } from "../graphql/documents";
+import type { GqlPost } from "../graphql/types";
 import { MAX_POST_BODY } from "../lib/limits";
 import type { UIStrings } from "../lib/i18n";
 
 interface Props {
   strings: UIStrings;
-  onCreated: () => void;
+  onCreated: (post: GqlPost) => void;
 }
 
 export function Composer({ strings, onCreated }: Props) {
@@ -26,8 +27,10 @@ export function Composer({ strings, onCreated }: Props) {
       setError(response.error.graphQLErrors[0]?.message ?? response.error.message);
       return;
     }
+    const created = response.data?.createPost;
+    if (!created) return;
     setBody("");
-    onCreated();
+    onCreated(created);
   }
 
   return (

@@ -166,3 +166,126 @@ describe("client feed", () => {
     expect(await screen.findByText("Nice walk.")).toBeInTheDocument();
   });
 });
+
+function numberedPosts(count: number): GqlPost[] {
+  return Array.from({ length: count }, (_, index) =>
+    makePost({
+      id: `post_${index + 1}`,
+      body: `Post number ${index + 1}`,
+      author: priya,
+    }),
+  );
+}
+
+function pageFrom(posts: GqlPost[], first: number, after: string | undefined) {
+  let start = 0;
+  if (after) {
+    const index = posts.findIndex((item) => item.id === after);
+    start = index === -1 ? posts.length : index + 1;
+  }
+  const slice = posts.slice(start, start + first);
+  const last = slice[slice.length - 1];
+  return {
+    feed: {
+      totalCount: posts.length,
+      pageInfo: {
+        hasNextPage: start + slice.length < posts.length,
+        hasPreviousPage: start > 0,
+        startCursor: slice[0]?.id ?? null,
+        endCursor: last ? last.id : null,
+      },
+      edges: slice.map((node) => ({ cursor: node.id, node })),
+    },
+  };
+}
+
+describe("pagination and optimistic updates", () => {
+  it("loads the next page with a cursor", async () => {
+    const posts = numberedPosts(8);
+    installGraphqlFetch((req) => {
+      const name = operationName(req.query);
+      if (name === "Feed") {
+        const first = Number(req.variables?.["first"] ?? 5);
+        const after = typeof req.variables?.["after"] === "string" ? req.variables["after"] : undefined;
+        return pageFrom(posts, first, after);
+      }
+      if (name === "Users") return { users: [maya, priya] };
+      if (name === "Me") return { me: null };
+      throw new Error("unexpected operation " + name);
+    });
+
+    render(<App />);
+    expect(await screen.findByText("Post number 1")).toBeInTheDocument();
+    expect(screen.getByText("Post number 5")).toBeInTheDocument();
+    expect(screen.queryByText("Post number 6")).not.toBeInTheDocument();
+
+    await userEvent.click(screen.getByRole("button", { name: "Load more" }));
+    expect(await screen.findByText("Post number 6")).toBeInTheDocument();
+    expect(screen.getByText("Post number 8")).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Load more" })).not.toBeInTheDocument();
+  });
+
+  it("likes and comments optimistically and rolls back on error", async () => {
+    let settleLike: ((ok: boolean) => void) | undefined;
+    let settleComment: ((ok: boolean) => void) | undefined;
+    installGraphqlFetch((req, headers) => {
+      const name = operationName(req.query);
+      if (name === "Feed") return feedData([morningPost]);
+      if (name === "Users") return { users: [maya, priya] };
+      if (name === "Me") return { me: headers.get("authorization") ? maya : null };
+      if (name === "SignIn") return { signIn: { token: "demo-token", user: maya } };
+      if (name === "Like") {
+        return new Promise((resolve) => {
+          settleLike = (ok) => {
+            if (ok) {
+              resolve({
+                like: { ...morningPost, likedByMe: true, likeCount: morningPost.likeCount + 1 },
+              });
+            } else {
+              resolve(jsonResponse(null, [{ message: "Like failed" }]));
+            }
+          };
+        });
+      }
+      if (name === "Comment") {
+        return new Promise((resolve) => {
+          settleComment = (ok) => {
+            if (ok) {
+              resolve({
+                comment: {
+                  id: "comment_9",
+                  postId: morningPost.id,
+                  body: String(req.variables?.["body"] ?? ""),
+                  createdAt: "2026-11-24T08:05:00.000Z",
+                  author: maya,
+                },
+              });
+            } else {
+              resolve(jsonResponse(null, [{ message: "Comment failed" }]));
+            }
+          };
+        });
+      }
+      throw new Error("unexpected operation " + name);
+    });
+
+    render(<App />);
+    expect(await screen.findByText(/grey morning/)).toBeInTheDocument();
+    await userEvent.selectOptions(screen.getByLabelText("Sign in as"), "maya");
+    await userEvent.click(screen.getByRole("button", { name: "Sign in" }));
+    expect(await screen.findByText(/Signed in as/)).toBeInTheDocument();
+
+    await userEvent.click(screen.getByRole("button", { name: "Like" }));
+    expect(await screen.findByRole("button", { name: "Liked" })).toBeInTheDocument();
+    settleLike?.(false);
+    expect(await screen.findByRole("button", { name: "Like" })).toBeInTheDocument();
+    expect(await screen.findByText("Like failed")).toBeInTheDocument();
+
+    await userEvent.type(screen.getByPlaceholderText("Write a comment"), "This should not stick.");
+    await userEvent.click(screen.getByRole("button", { name: "Comment" }));
+    expect(await screen.findByText("This should not stick.")).toBeInTheDocument();
+    settleComment?.(false);
+    expect(await screen.findByText("Comment failed")).toBeInTheDocument();
+    expect(screen.queryByText("This should not stick.")).not.toBeInTheDocument();
+  });
+});

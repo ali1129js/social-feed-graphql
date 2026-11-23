@@ -319,3 +319,10 @@ textarea {
     grid-template-columns: 1fr;
   }
 }
+
+.load-more {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 0.5rem;
+}
