@@ -2,7 +2,7 @@
 
 A small social feed built as a monorepo: a TypeScript GraphQL server and a React client. All people and posts are fictional example data.
 
-Status: scaffold. The server answers a health query and the client shows the themed shell. Schema, auth, the feed list, pagination and deployment come in the next steps.
+Status: the GraphQL schema and an in-memory store are in place (User, Post, Comment, Like). Auth, the client feed, persistence and deployment come in the next steps.
 
 ## Layout
 
