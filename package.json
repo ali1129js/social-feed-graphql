@@ -8,6 +8,7 @@
     "typecheck": "npm --prefix server run typecheck && npm --prefix client run typecheck",
     "build": "npm --prefix server run build && npm --prefix client run build",
     "dev:server": "npm --prefix server run dev",
-    "dev:client": "npm --prefix client run dev"
+    "dev:client": "npm --prefix client run dev",
+    "guard": "npm --prefix client run guard && npm --prefix server run guard"
   }
 }
