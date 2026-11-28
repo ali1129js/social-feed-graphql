@@ -1,31 +1,47 @@
 import type { CommentRecord, LikeRecord, PostRecord, SeedData, UserRecord } from "./types.js";
 
-export class StoreError extends Error {
-  readonly code: "NOT_FOUND" | "CONFLICT";
+export type StoreErrorCode = "NOT_FOUND" | "CONFLICT" | "BAD_CURSOR";
 
-  constructor(message: string, code: "NOT_FOUND" | "CONFLICT") {
+export class StoreError extends Error {
+  readonly code: "NOT_FOUND" | "CONFLICT" | "BAD_CURSOR";
+
+  constructor(message: string, code: StoreErrorCode) {
     super(message);
     this.name = "StoreError";
     this.code = code;
   }
 }
 
+export interface FeedPage {
+  posts: PostRecord[];
+  hasNextPage: boolean;
+  hasPreviousPage: boolean;
+  totalCount: number;
+}
+
+/**
+ * Everything the resolvers know about storage. Methods are async so a real
+ * database can sit behind them; the in-memory store just resolves immediately.
+ */
 export interface Store {
-  listUsers(): UserRecord[];
-  getUser(id: string): UserRecord | undefined;
-  getUserByHandle(handle: string): UserRecord | undefined;
-  listPostsNewestFirst(): PostRecord[];
-  getPost(id: string): PostRecord | undefined;
-  createPost(input: { authorId: string; body: string }): PostRecord;
-  deletePost(id: string): boolean;
-  listComments(postId: string): CommentRecord[];
-  getComment(id: string): CommentRecord | undefined;
-  createComment(input: { authorId: string; postId: string; body: string }): CommentRecord;
-  deleteComment(id: string): boolean;
-  listLikes(postId: string): LikeRecord[];
-  findLike(postId: string, userId: string): LikeRecord | undefined;
-  addLike(input: { userId: string; postId: string }): LikeRecord;
-  removeLike(id: string): boolean;
+  listUsers(): Promise<UserRecord[]>;
+  getUser(id: string): Promise<UserRecord | undefined>;
+  getUserByHandle(handle: string): Promise<UserRecord | undefined>;
+  /** Newest first, ties broken by id (highest first). `after` is a post id. */
+  listFeedPage(first: number, after?: string): Promise<FeedPage>;
+  getPost(id: string): Promise<PostRecord | undefined>;
+  createPost(input: { authorId: string; body: string }): Promise<PostRecord>;
+  deletePost(id: string): Promise<boolean>;
+  listComments(postId: string): Promise<CommentRecord[]>;
+  countComments(postId: string): Promise<number>;
+  getComment(id: string): Promise<CommentRecord | undefined>;
+  createComment(input: { authorId: string; postId: string; body: string }): Promise<CommentRecord>;
+  deleteComment(id: string): Promise<boolean>;
+  listLikes(postId: string): Promise<LikeRecord[]>;
+  countLikes(postId: string): Promise<number>;
+  findLike(postId: string, userId: string): Promise<LikeRecord | undefined>;
+  addLike(input: { userId: string; postId: string }): Promise<LikeRecord>;
+  removeLike(id: string): Promise<boolean>;
 }
 
 function copySeed(seed: SeedData): SeedData {
@@ -35,6 +51,17 @@ function copySeed(seed: SeedData): SeedData {
     comments: seed.comments.map((c) => ({ ...c })),
     likes: seed.likes.map((l) => ({ ...l })),
   };
+}
+
+function idNumber(id: string): number {
+  const n = Number(id.slice(id.indexOf("_") + 1));
+  return Number.isInteger(n) ? n : 0;
+}
+
+/** Same order as the SQL store: created_at DESC, then id DESC. */
+function compareNewestFirst(a: PostRecord, b: PostRecord): number {
+  if (a.createdAt !== b.createdAt) return a.createdAt < b.createdAt ? 1 : -1;
+  return idNumber(b.id) - idNumber(a.id);
 }
 
 function maxNumericId(items: { id: string }[], prefix: string): number {
@@ -73,28 +100,39 @@ export function createMemoryStore(
   };
 
   return {
-    listUsers() {
+    async listUsers() {
       return data.users.map((u) => ({ ...u }));
     },
-    getUser(id) {
+    async getUser(id) {
       const user = data.users.find((u) => u.id === id);
       return user ? { ...user } : undefined;
     },
-    getUserByHandle(handle) {
+    async getUserByHandle(handle) {
       const needle = handle.trim().toLowerCase();
       const user = data.users.find((u) => u.handle.toLowerCase() === needle);
       return user ? { ...user } : undefined;
     },
-    listPostsNewestFirst() {
-      return [...data.posts]
-        .sort((a, b) => (a.createdAt < b.createdAt ? 1 : a.createdAt > b.createdAt ? -1 : 0))
-        .map((p) => ({ ...p }));
+    async listFeedPage(first, after) {
+      const sorted = [...data.posts].sort(compareNewestFirst);
+      let start = 0;
+      if (after !== undefined) {
+        const index = sorted.findIndex((p) => p.id === after);
+        if (index === -1) throw new StoreError("Invalid cursor", "BAD_CURSOR");
+        start = index + 1;
+      }
+      const slice = sorted.slice(start, start + first);
+      return {
+        posts: slice.map((p) => ({ ...p })),
+        hasNextPage: start + slice.length < sorted.length,
+        hasPreviousPage: start > 0,
+        totalCount: sorted.length,
+      };
     },
-    getPost(id) {
+    async getPost(id) {
       const post = data.posts.find((p) => p.id === id);
       return post ? { ...post } : undefined;
     },
-    createPost(input) {
+    async createPost(input) {
       requireUser(input.authorId);
       counters.post += 1;
       const post: PostRecord = {
@@ -106,7 +144,7 @@ export function createMemoryStore(
       data.posts.push(post);
       return { ...post };
     },
-    deletePost(id) {
+    async deletePost(id) {
       const index = data.posts.findIndex((p) => p.id === id);
       if (index === -1) return false;
       data.posts.splice(index, 1);
@@ -114,17 +152,20 @@ export function createMemoryStore(
       data.likes = data.likes.filter((l) => l.postId !== id);
       return true;
     },
-    listComments(postId) {
+    async listComments(postId) {
       return data.comments
         .filter((c) => c.postId === postId)
         .sort((a, b) => (a.createdAt < b.createdAt ? -1 : a.createdAt > b.createdAt ? 1 : 0))
         .map((c) => ({ ...c }));
     },
-    getComment(id) {
+    async countComments(postId) {
+      return data.comments.filter((c) => c.postId === postId).length;
+    },
+    async getComment(id) {
       const comment = data.comments.find((c) => c.id === id);
       return comment ? { ...comment } : undefined;
     },
-    createComment(input) {
+    async createComment(input) {
       requireUser(input.authorId);
       requirePost(input.postId);
       counters.comment += 1;
@@ -138,20 +179,23 @@ export function createMemoryStore(
       data.comments.push(comment);
       return { ...comment };
     },
-    deleteComment(id) {
+    async deleteComment(id) {
       const index = data.comments.findIndex((c) => c.id === id);
       if (index === -1) return false;
       data.comments.splice(index, 1);
       return true;
     },
-    listLikes(postId) {
+    async listLikes(postId) {
       return data.likes.filter((l) => l.postId === postId).map((l) => ({ ...l }));
     },
-    findLike(postId, userId) {
+    async countLikes(postId) {
+      return data.likes.filter((l) => l.postId === postId).length;
+    },
+    async findLike(postId, userId) {
       const like = data.likes.find((l) => l.postId === postId && l.userId === userId);
       return like ? { ...like } : undefined;
     },
-    addLike(input) {
+    async addLike(input) {
       requireUser(input.userId);
       requirePost(input.postId);
       if (data.likes.some((l) => l.postId === input.postId && l.userId === input.userId)) {
@@ -167,7 +211,7 @@ export function createMemoryStore(
       data.likes.push(like);
       return { ...like };
     },
-    removeLike(id) {
+    async removeLike(id) {
       const index = data.likes.findIndex((l) => l.id === id);
       if (index === -1) return false;
       data.likes.splice(index, 1);

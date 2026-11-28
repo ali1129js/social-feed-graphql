@@ -1,7 +1,6 @@
-import { describe, expect, it } from "vitest";
+import { afterAll, describe, expect, it } from "vitest";
 import { createApp } from "./app.js";
-import { seedData } from "./seed.js";
-import { createMemoryStore } from "./store.js";
+import { createStoreFactory } from "./testing/stores.js";
 import { MAX_COMMENT_BODY, MAX_POST_BODY } from "./validation.js";
 
 interface GraphQLBody {
@@ -10,6 +9,15 @@ interface GraphQLBody {
 }
 
 type App = ReturnType<typeof createApp>;
+
+// The whole file runs once per Vitest project: in-memory store, then Postgres (PGlite).
+const factory = createStoreFactory();
+afterAll(() => factory.close());
+
+/** A fresh app on a store holding exactly the demo data. */
+async function newApp(options: { jwtSecret?: string } = {}): Promise<App> {
+  return createApp({ ...options, store: await factory.create() });
+}
 
 const FEED_FIELDS = `{
   totalCount
@@ -34,7 +42,7 @@ async function request(
   query: string,
   options: { variables?: Record<string, unknown>; token?: string; app?: App } = {},
 ): Promise<{ status: number; body: GraphQLBody }> {
-  const app = options.app ?? createApp();
+  const app = options.app ?? (await newApp());
   const headers: Record<string, string> = { "content-type": "application/json" };
   if (options.token) headers.authorization = "Bearer " + options.token;
   const res = await app.fetch("http://localhost/graphql", {
@@ -186,7 +194,7 @@ describe("auth", () => {
   });
 
   it("returns me when the request carries a signed token", async () => {
-    const app = createApp();
+    const app = await newApp();
     expect((await request("query { me { handle } }", { app })).body.data).toEqual({ me: null });
 
     const token = await signIn(app, "noah");
@@ -195,8 +203,8 @@ describe("auth", () => {
   });
 
   it("ignores a forged or mismatched token", async () => {
-    const app = createApp({ jwtSecret: "test-secret-a" });
-    const other = createApp({ jwtSecret: "test-secret-b" });
+    const app = await newApp({ jwtSecret: "test-secret-a" });
+    const other = await newApp({ jwtSecret: "test-secret-b" });
     const token = await signIn(other, "maya");
     const { body } = await request("query { me { handle } }", { app, token });
     expect(body.data).toEqual({ me: null });
@@ -206,7 +214,7 @@ describe("auth", () => {
   });
 
   it("marks likedByMe from the signed-in user", async () => {
-    const app = createApp();
+    const app = await newApp();
     const token = await signIn(app, "maya");
     const { body } = await request('query { post(id: "post_8") { likedByMe likeCount } }', { app, token });
     // maya (user_1) already likes post_8
@@ -216,7 +224,7 @@ describe("auth", () => {
 
 describe("mutations", () => {
   it("creates a post as the signed-in user and puts it at the top of the feed", async () => {
-    const app = createApp();
+    const app = await newApp();
     const token = await signIn(app, "luca");
     const { body } = await request(
       'mutation { createPost(body: "A new walk by the river.") { id body author { handle } likeCount commentCount } }',
@@ -235,7 +243,7 @@ describe("mutations", () => {
   });
 
   it("rejects an unauthenticated mutation and an empty or too-long post body", async () => {
-    const app = createApp();
+    const app = await newApp();
     const unauth = await request('mutation { createPost(body: "Hello from nobody.") { id } }', { app });
     expect(errorMessage(unauth.body)).toMatch(/sign in required/i);
     expect(errorCode(unauth.body)).toBe("UNAUTHENTICATED");
@@ -253,7 +261,7 @@ describe("mutations", () => {
   });
 
   it("adds a comment to a post", async () => {
-    const app = createApp();
+    const app = await newApp();
     const token = await signIn(app, "priya");
     const { body } = await request(
       'mutation { comment(postId: "post_7", body: "Those speakers were a good buy.") { id body author { handle } postId } }',
@@ -274,7 +282,7 @@ describe("mutations", () => {
   });
 
   it("rejects an empty comment and a missing post", async () => {
-    const app = createApp();
+    const app = await newApp();
     const token = await signIn(app, "maya");
     const empty = await request('mutation { comment(postId: "post_1", body: "") { id } }', { app, token });
     expect(errorMessage(empty.body)).toMatch(/cannot be empty/i);
@@ -291,7 +299,7 @@ describe("mutations", () => {
   });
 
   it("toggles a like and updates likeCount and likedByMe", async () => {
-    const app = createApp();
+    const app = await newApp();
     const token = await signIn(app, "elena");
     const liked = await request(
       'mutation { like(postId: "post_7") { id likeCount likedByMe likes { user { handle } } } }',
@@ -321,7 +329,7 @@ describe("mutations", () => {
   });
 
   it("lets an author delete their own post and refuses anyone else", async () => {
-    const app = createApp();
+    const app = await newApp();
     const noah = await signIn(app, "noah");
     const forbidden = await request('mutation { deletePost(postId: "post_8") }', { app, token: noah });
     expect(errorMessage(forbidden.body)).toMatch(/your own post/i);
@@ -339,7 +347,7 @@ describe("mutations", () => {
   });
 
   it("lets an author delete their own comment and refuses anyone else", async () => {
-    const app = createApp();
+    const app = await newApp();
     const maya = await signIn(app, "maya");
     const forbidden = await request('mutation { deleteComment(commentId: "comment_5") }', { app, token: maya });
     expect(errorMessage(forbidden.body)).toMatch(/your own comment/i);
@@ -355,8 +363,8 @@ describe("mutations", () => {
   });
 
   it("uses the injected store so tests stay isolated", async () => {
-    const store = createMemoryStore(seedData(), () => "2026-11-24T08:00:00.000Z");
-    store.deletePost("post_1");
+    const store = await factory.create(() => "2026-11-24T08:00:00.000Z");
+    await store.deletePost("post_1");
     const app = createApp({ store });
     const { body } = await request("query { feed { totalCount } }", { app });
     expect(body.data).toEqual({ feed: { totalCount: 7 } });

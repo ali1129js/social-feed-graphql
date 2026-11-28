@@ -2,7 +2,7 @@ import { GraphQLError } from "graphql";
 import { createSchema } from "graphql-yoga";
 import { signToken } from "./auth.js";
 import type { ResolverContext } from "./context.js";
-import { paginate } from "./paginate.js";
+import { toConnection } from "./paginate.js";
 import { StoreError } from "./store.js";
 import type { CommentRecord, LikeRecord, PostRecord, UserRecord } from "./types.js";
 import {
@@ -102,6 +102,9 @@ function graphqlFromStore(error: unknown): never {
   if (error instanceof StoreError && error.code === "CONFLICT") {
     throw new GraphQLError(error.message, { extensions: { code: "CONFLICT" } });
   }
+  if (error instanceof StoreError && error.code === "BAD_CURSOR") {
+    throw new GraphQLError("Invalid cursor", { extensions: { code: "BAD_USER_INPUT" } });
+  }
   throw error;
 }
 
@@ -112,8 +115,8 @@ function requireAuth(ctx: ResolverContext): UserRecord {
   return ctx.user;
 }
 
-function requirePost(ctx: ResolverContext, id: string) {
-  const post = ctx.store.getPost(id);
+async function requirePost(ctx: ResolverContext, id: string) {
+  const post = await ctx.store.getPost(id);
   if (!post) {
     throw new GraphQLError("Post not found", { extensions: { code: "NOT_FOUND" } });
   }
@@ -126,121 +129,126 @@ export const resolvers = {
     me(_parent: unknown, _args: unknown, ctx: ResolverContext) {
       return ctx.user ?? null;
     },
-    feed(_parent: unknown, args: { first?: number | null; after?: string | null }, ctx: ResolverContext) {
+    async feed(_parent: unknown, args: { first?: number | null; after?: string | null }, ctx: ResolverContext) {
       const parsed = parseOrThrow(feedArgsSchema, {
         first: args.first ?? undefined,
         after: args.after ?? undefined,
       });
-      return paginate(ctx.store.listPostsNewestFirst(), parsed.first ?? DEFAULT_FEED_FIRST, parsed.after ?? undefined);
+      try {
+        const page = await ctx.store.listFeedPage(parsed.first ?? DEFAULT_FEED_FIRST, parsed.after ?? undefined);
+        return toConnection(page);
+      } catch (error) {
+        graphqlFromStore(error);
+      }
     },
-    post(_parent: unknown, args: { id: string }, ctx: ResolverContext) {
+    async post(_parent: unknown, args: { id: string }, ctx: ResolverContext) {
       const id = parseOrThrow(idSchema, args.id);
-      return ctx.store.getPost(id) ?? null;
+      return (await ctx.store.getPost(id)) ?? null;
     },
-    users(_parent: unknown, _args: unknown, ctx: ResolverContext) {
-      return ctx.store.listUsers();
+    async users(_parent: unknown, _args: unknown, ctx: ResolverContext) {
+      return await ctx.store.listUsers();
     },
   },
   Mutation: {
     async signIn(_parent: unknown, args: { handle: string }, ctx: ResolverContext) {
       const handle = parseOrThrow(handleSchema, args.handle);
-      const user = ctx.store.getUserByHandle(handle);
+      const user = await ctx.store.getUserByHandle(handle);
       if (!user) {
         throw new GraphQLError("Unknown user", { extensions: { code: "UNAUTHENTICATED" } });
       }
       const token = await signToken(user, ctx.jwtSecret);
       return { token, user };
     },
-    createPost(_parent: unknown, args: { body: string }, ctx: ResolverContext) {
+    async createPost(_parent: unknown, args: { body: string }, ctx: ResolverContext) {
       const user = requireAuth(ctx);
       const body = parseOrThrow(postBodySchema, args.body);
       try {
-        return ctx.store.createPost({ authorId: user.id, body });
+        return await ctx.store.createPost({ authorId: user.id, body });
       } catch (error) {
         graphqlFromStore(error);
       }
     },
-    comment(_parent: unknown, args: { postId: string; body: string }, ctx: ResolverContext) {
+    async comment(_parent: unknown, args: { postId: string; body: string }, ctx: ResolverContext) {
       const user = requireAuth(ctx);
       const postId = parseOrThrow(idSchema, args.postId);
       const body = parseOrThrow(commentBodySchema, args.body);
-      requirePost(ctx, postId);
+      await requirePost(ctx, postId);
       try {
-        return ctx.store.createComment({ authorId: user.id, postId, body });
+        return await ctx.store.createComment({ authorId: user.id, postId, body });
       } catch (error) {
         graphqlFromStore(error);
       }
     },
-    like(_parent: unknown, args: { postId: string }, ctx: ResolverContext) {
+    async like(_parent: unknown, args: { postId: string }, ctx: ResolverContext) {
       const user = requireAuth(ctx);
       const postId = parseOrThrow(idSchema, args.postId);
-      const post = requirePost(ctx, postId);
-      const existing = ctx.store.findLike(postId, user.id);
+      const post = await requirePost(ctx, postId);
+      const existing = await ctx.store.findLike(postId, user.id);
       try {
-        if (existing) ctx.store.removeLike(existing.id);
-        else ctx.store.addLike({ userId: user.id, postId });
-        const updated = ctx.store.getPost(post.id);
+        if (existing) await ctx.store.removeLike(existing.id);
+        else await ctx.store.addLike({ userId: user.id, postId });
+        const updated = await ctx.store.getPost(post.id);
         if (!updated) throw new GraphQLError("Post not found", { extensions: { code: "NOT_FOUND" } });
         return updated;
       } catch (error) {
         graphqlFromStore(error);
       }
     },
-    deletePost(_parent: unknown, args: { postId: string }, ctx: ResolverContext) {
+    async deletePost(_parent: unknown, args: { postId: string }, ctx: ResolverContext) {
       const user = requireAuth(ctx);
       const postId = parseOrThrow(idSchema, args.postId);
-      const post = requirePost(ctx, postId);
+      const post = await requirePost(ctx, postId);
       if (post.authorId !== user.id) {
         throw new GraphQLError("You can only delete your own post", { extensions: { code: "FORBIDDEN" } });
       }
-      return ctx.store.deletePost(postId);
+      return await ctx.store.deletePost(postId);
     },
-    deleteComment(_parent: unknown, args: { commentId: string }, ctx: ResolverContext) {
+    async deleteComment(_parent: unknown, args: { commentId: string }, ctx: ResolverContext) {
       const user = requireAuth(ctx);
       const commentId = parseOrThrow(idSchema, args.commentId);
-      const comment = ctx.store.getComment(commentId);
+      const comment = await ctx.store.getComment(commentId);
       if (!comment) {
         throw new GraphQLError("Comment not found", { extensions: { code: "NOT_FOUND" } });
       }
       if (comment.authorId !== user.id) {
         throw new GraphQLError("You can only delete your own comment", { extensions: { code: "FORBIDDEN" } });
       }
-      return ctx.store.deleteComment(commentId);
+      return await ctx.store.deleteComment(commentId);
     },
   },
   Post: {
-    author(post: PostRecord, _args: unknown, ctx: ResolverContext) {
-      const user = ctx.store.getUser(post.authorId);
+    async author(post: PostRecord, _args: unknown, ctx: ResolverContext) {
+      const user = await ctx.store.getUser(post.authorId);
       if (!user) throw new GraphQLError("Author missing", { extensions: { code: "NOT_FOUND" } });
       return user;
     },
-    comments(post: PostRecord, _args: unknown, ctx: ResolverContext) {
-      return ctx.store.listComments(post.id);
+    async comments(post: PostRecord, _args: unknown, ctx: ResolverContext) {
+      return await ctx.store.listComments(post.id);
     },
-    likes(post: PostRecord, _args: unknown, ctx: ResolverContext) {
-      return ctx.store.listLikes(post.id);
+    async likes(post: PostRecord, _args: unknown, ctx: ResolverContext) {
+      return await ctx.store.listLikes(post.id);
     },
-    likeCount(post: PostRecord, _args: unknown, ctx: ResolverContext) {
-      return ctx.store.listLikes(post.id).length;
+    async likeCount(post: PostRecord, _args: unknown, ctx: ResolverContext) {
+      return await ctx.store.countLikes(post.id);
     },
-    commentCount(post: PostRecord, _args: unknown, ctx: ResolverContext) {
-      return ctx.store.listComments(post.id).length;
+    async commentCount(post: PostRecord, _args: unknown, ctx: ResolverContext) {
+      return await ctx.store.countComments(post.id);
     },
-    likedByMe(post: PostRecord, _args: unknown, ctx: ResolverContext) {
+    async likedByMe(post: PostRecord, _args: unknown, ctx: ResolverContext) {
       if (!ctx.user) return false;
-      return ctx.store.findLike(post.id, ctx.user.id) !== undefined;
+      return (await ctx.store.findLike(post.id, ctx.user.id)) !== undefined;
     },
   },
   Comment: {
-    author(comment: CommentRecord, _args: unknown, ctx: ResolverContext) {
-      const user = ctx.store.getUser(comment.authorId);
+    async author(comment: CommentRecord, _args: unknown, ctx: ResolverContext) {
+      const user = await ctx.store.getUser(comment.authorId);
       if (!user) throw new GraphQLError("Author missing", { extensions: { code: "NOT_FOUND" } });
       return user;
     },
   },
   Like: {
-    user(like: LikeRecord, _args: unknown, ctx: ResolverContext) {
-      const user = ctx.store.getUser(like.userId);
+    async user(like: LikeRecord, _args: unknown, ctx: ResolverContext) {
+      const user = await ctx.store.getUser(like.userId);
       if (!user) throw new GraphQLError("User missing", { extensions: { code: "NOT_FOUND" } });
       return user;
     },
