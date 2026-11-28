@@ -93,3 +93,15 @@ Liking a post changes two things: a row in `likes` and the `like_count` on the p
 `addLike` inserts the like with `ON CONFLICT DO NOTHING` on `(post_id, user_id)`. If nothing was inserted, the user already liked the post, so it reports `CONFLICT` and the counter is untouched. If a row was inserted, the counter goes up by one in the same transaction. `removeLike` deletes the row and lowers the counter the same way. The unique index decides the winner when two requests race, so the database, not application code, guarantees one like per user.
 
 The trade-off: a counter is a copy of information the `likes` table already holds. It makes the feed cheap to read, but every write path must keep it in step. `server/src/store-postgres.test.ts` checks exactly that.
+
+## Deploying on free plans (SOC-07)
+
+The server runs as a Render web service on the free instance type in Frankfurt. Render clones the public GitHub repo, runs the build command (`cd server && npm ci --include=dev && npm run build`, because `tsc` is a dev dependency) and starts `node dist/index.js`. Pushing to `main` redeploys it.
+
+**Secrets live in the host, not in Git.** `DATABASE_URL` (the Neon connection string, which works like a password) and `JWT_SECRET` (signs login tokens) are set as environment variables in Render's dashboard or API. The code only reads `process.env`. Rotating a secret means changing the value there and redeploying; nothing in Git changes. `.env` files are git-ignored, and `npm run guard` plus a hash-based leak guard catch accidents.
+
+**Cold starts.** A free Render service sleeps after about 15 minutes without traffic. The next request wakes it, which takes tens of seconds, and a sleeping free Neon database adds a short delay on top. The client says so while the first feed load is pending. This is the price of free hosting, not a bug.
+
+**CORS.** Browsers block a page on one origin from reading answers from another unless the server opts in. The client lives on `https://ali1129js.github.io` and the API on `onrender.com`, so the server sets `CORS_ORIGIN` (a comma separated allow list) and answers the browser's preflight `OPTIONS` request with the matching `access-control-allow-origin` and `authorization` headers. An origin is only scheme plus host, with no path and no trailing slash. When `CORS_ORIGIN` is unset (local dev, tests) Yoga's permissive default applies.
+
+**Client build.** Vite bakes `VITE_GRAPHQL_URL` into the bundle at build time, so changing the API URL means rebuilding. A GitHub Actions workflow (`.github/workflows/pages.yml`) typechecks, tests and builds the client with that variable and `VITE_BASE=/social-feed-graphql/` (a project site lives under a sub path), then publishes it with the Pages source set to "GitHub Actions". The URL is public, so it can sit in the workflow file.

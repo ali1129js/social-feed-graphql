@@ -2,18 +2,22 @@
 
 A small social feed built as a monorepo: a TypeScript GraphQL server and a React client. All people and posts are fictional example data.
 
-Status: you can sign in as a seeded demo user and use the client feed, including cursor pagination and optimistic likes and comments. The server can now store data in Postgres (Drizzle ORM, Neon-ready) when `DATABASE_URL` is set, and falls back to the in-memory store otherwise. Production deploy (SOC-07) still needs Ali's go, so there is no public live site yet and no hosted database is connected.
+Status: you can sign in as a seeded demo user and use the client feed, including cursor pagination and optimistic likes and comments. The server can now store data in Postgres (Drizzle ORM, Neon-ready) when `DATABASE_URL` is set, and falls back to the in-memory store otherwise. It is deployed (SOC-07): the client on GitHub Pages, the server on Render's free tier and the data in a free Neon Postgres database.
 
 See [docs/LEARN.md](docs/LEARN.md) for how the schema, resolvers, auth context and optimistic UI work.
 
 ## Live links
 
-Until SOC-07 is approved, run it locally:
+- Client (GitHub Pages): https://ali1129js.github.io/social-feed-graphql/
+- GraphQL API (Render free tier, Frankfurt): https://social-feed-graphql-api.onrender.com/graphql
+- Database: Neon free Postgres (Frankfurt), seeded with the fictional demo data
+
+Sign in as a demo user such as `maya`. The first request after an idle period can take 30 to 60 seconds while the free server wakes up; the client shows a note while it waits.
+
+Run it locally instead:
 
 - GraphQL API: http://localhost:4000/graphql
 - Client: the Vite dev server (default http://localhost:5173), which proxies `/graphql` to the API
-
-Planned after SOC-07: the client on GitHub Pages and the server on Render's free tier.
 
 ## Free-tier cold starts
 
@@ -88,3 +92,9 @@ Tests need no database: `npm test` runs the server suite twice, once on the in-m
 ## Licence
 
 MIT, see LICENSE.
+
+## Deploy (free plans)
+
+- Server: Render web service, free instance, Frankfurt. Build `cd server && npm ci --include=dev && npm run build`, start `cd server && node dist/index.js`. Environment: `DATABASE_URL`, `JWT_SECRET` (both secret, set only in Render), `CORS_ORIGIN=https://ali1129js.github.io`, `NODE_VERSION=24`.
+- Client: `.github/workflows/pages.yml` builds `client/` with `VITE_GRAPHQL_URL` and `VITE_BASE` and publishes to GitHub Pages (Pages source: GitHub Actions) on every push that touches `client/`.
+- See the deploy section in [docs/LEARN.md](docs/LEARN.md) for the reasoning.
