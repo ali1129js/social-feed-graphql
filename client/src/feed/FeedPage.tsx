@@ -92,7 +92,12 @@ export function FeedPage({ locale, strings, token, onAuthChange }: Props) {
       </aside>
       <section className="feed-main" aria-labelledby="feed-heading">
         <h2 id="feed-heading">{strings.feedHeading}</h2>
-        {showLoading ? <p className="status-block">{strings.loadingFeed}</p> : null}
+        {showLoading ? (
+          <div className="status-block" role="status">
+            <p>{strings.loadingFeed}</p>
+            <p className="app-sub">{strings.coldStartNote}</p>
+          </div>
+        ) : null}
         {showError ? (
           <div className="status-block" role="alert">
             <p>{strings.feedError}</p>

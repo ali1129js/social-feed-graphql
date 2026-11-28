@@ -58,6 +58,7 @@ describe("client feed", () => {
     });
     render(<App />);
     expect(await screen.findByText("Loading the feed…")).toBeInTheDocument();
+    expect(screen.getByText(/first load can take 30 to 60 seconds/)).toBeInTheDocument();
     resolveFeed?.(feedData([]));
     expect(await screen.findByText("No posts yet.")).toBeInTheDocument();
   });

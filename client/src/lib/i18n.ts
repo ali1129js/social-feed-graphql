@@ -39,6 +39,7 @@ export interface UIStrings {
   deleteComment: string;
   deleting: string;
   loadingFeed: string;
+  coldStartNote: string;
   feedError: string;
   retry: string;
   emptyFeed: string;
@@ -88,6 +89,8 @@ const en: UIStrings = {
   deleteComment: "Delete comment",
   deleting: "Deleting…",
   loadingFeed: "Loading the feed…",
+  coldStartNote:
+    "The demo runs on free hosting. If it was idle, the first load can take 30 to 60 seconds while the server wakes up.",
   feedError: "The feed could not be loaded.",
   retry: "Try again",
   emptyFeed: "No posts yet.",
@@ -137,6 +140,8 @@ const de: UIStrings = {
   deleteComment: "Kommentar löschen",
   deleting: "Wird gelöscht…",
   loadingFeed: "Feed wird geladen…",
+  coldStartNote:
+    "Die Demo läuft auf kostenlosem Hosting. Nach einer Pause kann der erste Aufruf 30 bis 60 Sekunden dauern, bis der Server aufgewacht ist.",
   feedError: "Der Feed konnte nicht geladen werden.",
   retry: "Nochmal versuchen",
   emptyFeed: "Noch keine Beiträge.",

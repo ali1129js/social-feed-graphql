@@ -10,7 +10,7 @@ export interface CreateClientOptions {
 export function createUrqlClient(options: CreateClientOptions = {}): Client {
   const getToken = options.getToken ?? readToken;
   return new Client({
-    url: options.url ?? "/graphql",
+    url: options.url ?? import.meta.env.VITE_GRAPHQL_URL ?? "/graphql",
     exchanges: [cacheExchange, fetchExchange],
     // Call the current global fetch so tests can stub it after this module loads.
     preferGetMethod: false,
