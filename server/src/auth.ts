@@ -44,7 +44,7 @@ export async function userFromRequest(
   if (!match?.[1]) return undefined;
   const claims = await readToken(match[1], secret);
   if (!claims) return undefined;
-  const user = store.getUser(claims.sub);
+  const user = await store.getUser(claims.sub);
   if (!user || user.handle !== claims.handle) return undefined;
   return user;
 }
